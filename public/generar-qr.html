@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Generar Códigos QR - Votación Escolar</title>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <style>
+    :root{
+      --bg:#f0f4f8; --card:#ffffff; --text:#1e293b; --remember:#64748b;
+      --primary:#3b82f6; --primary-dark:#2563eb;
+      --ok:#10b981; --ok-dark:#059669; --warn:#f59e0b; --danger:#ef4444;
+      --border:#e2e8f0;
+      --shadow-sm:0 1px 3px rgba(0,0,0,0.08);
+      --shadow-md:0 4px 12px rgba(0,0,0,0.1);
+      --shadow-lg:0 8px 24px rgba(0,0,0,0.12);
+    }
+    *{box-sizing:border-box; margin:0; padding:0;}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh;padding:1rem;}
+    .app-container{max-width:1200px;margin:0 auto;}
+    
+    .header{background:var(--card);border-radius:16px;padding:1rem 1.25rem;box-shadow:var(--shadow-md);margin-bottom:1rem;}
+    .header h1{font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:.3rem;}
+    .header p{color:var(--remember);font-size:.9rem;}
+    
+    .card{background:var(--card);border-radius:16px;padding:1.25rem;box-shadow:var(--shadow-md);border:1px solid var(--border);margin-bottom:1rem;}
+    .card h2{font-size:1.1rem;font-weight:700;margin-bottom:.75rem;color:var(--text);}
+    .muted{color:var(--remember);font-size:.9rem;}
+    
+    .btn{border:none;border-radius:10px;padding:.8rem 1.25rem;font-weight:700;cursor:pointer;font-size:.95rem;transition:all .2s;display:inline-flex;align-items:center;justify-content:center;gap:.4rem;}
+    .btn.primary{background:var(--primary);color:#fff;}
+    .btn.primary:hover{background:var(--primary-dark);transform:translateY(-1px);box-shadow:0 3px 10px rgba(59,130,246,.3);}
+    .btn.success{background:var(--ok);color:#fff;}
+    .btn.success:hover{background:var(--ok-dark);}
+    .btn:disabled{opacity:.6;cursor:not-allowed;transform:none !important;}
+    
+    .controls{display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem;}
+    
+    #qr-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:1rem;margin-top:1rem;}
+    
+    .qr-card{background:#fff;border:2px solid var(--border);border-radius:12px;padding:1rem;text-align:center;page-break-inside:avoid;break-inside:avoid;}
+    .qr-card canvas{max-width:100%;height:auto;border:1px solid var(--border);border-radius:8px;margin:.5rem 0;}
+    .qr-card .student-info{margin-top:.75rem;}
+    .qr-card .student-name{font-weight:700;font-size:1rem;color:var(--text);margin-bottom:.25rem;}
+    .qr-card .student-details{font-size:.85rem;color:var(--remember);}
+    .qr-card .student-code{font-family:ui-monospace,monospace;font-weight:700;font-size:1.1rem;background:#f1f5f9;padding:.4rem .75rem;border-radius:8px;display:inline-block;margin-top:.5rem;color:var(--primary);}
+    
+    .loading{text-align:center;padding:2rem;color:var(--remember);}
+    
+    .alert{border-radius:10px;padding:.75rem 1rem;border:2px solid;margin-bottom:1rem;font-size:.9rem;font-weight:500;}
+    .alert.ok{background:#ecfdf5;border-color:#86efac;color:#065f46;}
+    .alert.danger{background:#fef2f2;border-color:#fecaca;color:#991b1d;}
+    
+    @media print {
+      body{background:#fff;padding:0;}
+      .app-container{max-width:100%;}
+      .header, .card h2, .controls, .no-print{display:none !important;}
+      #qr-grid{grid-template-columns:repeat(3, 1fr);gap:.5rem;}
+      .qr-card{page-break-inside:avoid;break-inside:avoid;border:1px solid #ccc;margin-bottom:.5rem;}
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <header class="header no-print">
+      <h1>📱 Generador de Códigos QR</h1>
+      <p>Genera códigos QR individuales para cada estudiante</p>
+    </header>
+
+    <div class="card no-print">
+      <h2>🔧 Controles</h2>
+      <div class="controls">
+        <button id="btn-generate" class="btn primary">
+          ✨ Generar Todos los QR
+        </button>
+        <button id="btn-print" class="btn success" disabled>
+          🖨️ Imprimir Códigos QR
+        </button>
+        <button id="btn-back" class="btn" style="background:#f1f5f9;color:var(--text);" onclick="window.location.href='admin.html'">
+          ← Volver al Admin
+        </button>
+      </div>
+      <p class="muted">
+        💡 Los estudiantes podrán escanear su código QR con un celular para votar automáticamente sin necesidad de ingresar el código manualmente.
+      </p>
+    </div>
+
+    <div id="alert-container"></div>
+
+    <div id="loading" class="loading" style="display:none;">
+      ⏳ Generando códigos QR...
+    </div>
+
+    <div id="qr-grid"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://nszrlnwipnbntmkjyjfi.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5zenJsbndpcG5ibnRta2p5amZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY3OTMwNjUsImV4cCI6MjA1MjM2OTA2NX0.pLAF1-3_-7-RZOEBjNkTzKQNu1p_4LpBWVbDPQvPLks';
+
+    const $ = id => document.getElementById(id);
+    let students = [];
+
+    function showAlert(type, message) {
+      const container = $('alert-container');
+      container.innerHTML = `<div class="alert ${type}">${message}</div>`;
+      setTimeout(() => container.innerHTML = '', 5000);
+    }
+
+    async function fetchStudents() {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/students?select=*&order=grade.asc,course.asc,name.asc`, {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`
+          }
+        });
+
+        if (!res.ok) throw new Error('Error al cargar estudiantes');
+        
+        students = await res.json();
+        return students;
+      } catch (error) {
+        console.error('Error:', error);
+        showAlert('danger', '❌ Error al cargar estudiantes: ' + error.message);
+        return [];
+      }
+    }
+
+    async function generateQRCodes() {
+      $('loading').style.display = 'block';
+      $('btn-generate').disabled = true;
+      $('qr-grid').innerHTML = '';
+
+      const students = await fetchStudents();
+      
+      if (students.length === 0) {
+        $('loading').style.display = 'none';
+        $('btn-generate').disabled = false;
+        showAlert('danger', '❌ No se encontraron estudiantes para generar códigos QR');
+        return;
+      }
+
+      // URL base de la aplicación (ajustar según tu dominio)
+      const baseURL = window.location.origin + window.location.pathname.replace('generar-qr.html', 'index.html');
+
+      for (const student of students) {
+        // Crear tarjeta QR
+        const card = document.createElement('div');
+        card.className = 'qr-card';
+        
+        const canvas = document.createElement('canvas');
+        card.appendChild(canvas);
+        
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'student-info';
+        infoDiv.innerHTML = `
+          <div class="student-name">${student.name || 'Sin nombre'}</div>
+          <div class="student-details">
+            📚 Grado ${student.grade || '?'}° - Curso ${student.course || '?'}
+          </div>
+          <div class="student-code">Código: ${student.access_code || '?????'}</div>
+        `;
+        card.appendChild(infoDiv);
+        
+        $('qr-grid').appendChild(card);
+        
+        // Generar QR con la URL + código
+        const qrData = `${baseURL}?code=${student.access_code}`;
+        
+        try {
+          await QRCode.toCanvas(canvas, qrData, {
+            width: 200,
+            margin: 2,
+            color: {
+              dark: '#1e293b',
+              light: '#ffffff'
+            }
+          });
+        } catch (error) {
+          console.error('Error generando QR para:', student.name, error);
+        }
+      }
+
+      $('loading').style.display = 'none';
+      $('btn-generate').disabled = false;
+      $('btn-print').disabled = false;
+      
+      showAlert('ok', `✅ Se generaron ${students.length} códigos QR correctamente`);
+    }
+
+    $('btn-generate').addEventListener('click', generateQRCodes);
+    
+    $('btn-print').addEventListener('click', () => {
+      window.print();
+    });
+
+    // Generar automáticamente al cargar
+    window.addEventListener('load', () => {
+      setTimeout(generateQRCodes, 500);
+    });
+  </script>
+</body>
+</html>

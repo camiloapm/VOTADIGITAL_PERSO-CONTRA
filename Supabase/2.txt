@@ -1,0 +1,299 @@
+-- ============================================================
+-- SISTEMA DE VOTACIÓN ESCOLAR - SQL COMPLETO (FORMATO 06105)
+-- ============================================================
+-- Formato de código:
+--   <grado 2 dígitos><curso 1 dígito><lista 2 dígitos>
+-- Ejemplos:
+--   6-1 lista 5  -> 06105
+--   7-3 lista 12 -> 07312
+--   11-2 lista 3 -> 11203
+--
+-- Nota: se asume que course SIEMPRE es 1..9 (no hay cursos > 9)
+-- ============================================================
+
+-- Recomendado: extensión para UUID
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ============================================================
+-- TABLA CONFIG
+-- ============================================================
+CREATE TABLE IF NOT EXISTS config (
+  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  election_status TEXT NOT NULL DEFAULT 'closed'
+    CHECK (election_status IN ('open', 'closed')),
+  admin_code TEXT NOT NULL DEFAULT 'ADMIN2026',
+  school_logo_url TEXT,
+  school_name TEXT NOT NULL DEFAULT 'Colegio',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+INSERT INTO config (id, election_status, admin_code, school_logo_url, school_name)
+VALUES (1, 'closed', 'ADMIN2026', NULL, 'Colegio')
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
+-- TABLA STUDENTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS students (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  full_name TEXT NOT NULL,
+  grade INTEGER NOT NULL CHECK (grade BETWEEN 1 AND 12),
+  course INTEGER NOT NULL CHECK (course BETWEEN 1 AND 9),
+  list_number INTEGER NOT NULL CHECK (list_number BETWEEN 1 AND 99),
+  access_code TEXT UNIQUE NOT NULL,
+  has_voted BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+
+  UNIQUE(grade, course, list_number)
+);
+
+-- ============================================================
+-- TABLA CANDIDATES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS candidates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  party TEXT,
+  photo_url TEXT,
+  votes INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================================
+-- TABLA VOTES (HISTÓRICO)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS votes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  candidate_id UUID NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+  student_id UUID REFERENCES students(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================================
+-- ÍNDICES
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_students_access_code ON students(access_code);
+CREATE INDEX IF NOT EXISTS idx_students_grade_course ON students(grade, course);
+CREATE INDEX IF NOT EXISTS idx_votes_candidate ON votes(candidate_id);
+
+-- ============================================================
+-- FUNCIÓN: GENERAR CÓDIGO ÚNICO (FORMATO 06105)
+-- ============================================================
+CREATE OR REPLACE FUNCTION generate_access_code(
+  p_grade INTEGER,
+  p_course INTEGER,
+  p_list_number INTEGER
+)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  -- Formato:
+  --   grade: 2 dígitos (06, 07, 11)
+  --   course: 1 dígito (1..9)
+  --   list: 2 dígitos (01..99)
+  --
+  -- Ej: 6,1,5   => 06 + 1 + 05 = 06105
+  -- Ej: 7,3,12  => 07 + 3 + 12 = 07312
+  -- Ej: 11,2,3  => 11 + 2 + 03 = 11203
+
+  RETURN LPAD(p_grade::TEXT, 2, '0') ||
+         p_course::TEXT ||
+         LPAD(p_list_number::TEXT, 2, '0');
+END;
+$$;
+
+-- ============================================================
+-- TRIGGER: AUTO GENERAR ACCESS_CODE
+-- ============================================================
+CREATE OR REPLACE FUNCTION auto_generate_access_code()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.access_code IS NULL OR NEW.access_code = '' THEN
+    NEW.access_code := generate_access_code(
+      NEW.grade,
+      NEW.course,
+      NEW.list_number
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trigger_auto_code ON students;
+CREATE TRIGGER trigger_auto_code
+  BEFORE INSERT ON students
+  FOR EACH ROW
+  EXECUTE FUNCTION auto_generate_access_code();
+
+-- ============================================================
+-- FUNCIÓN ATÓMICA CRÍTICA: CAST_VOTE
+-- ============================================================
+CREATE OR REPLACE FUNCTION cast_vote(
+  p_access_code TEXT,
+  p_candidate_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_student RECORD;
+  v_election_status TEXT;
+BEGIN
+  -- Verificar estado
+  SELECT election_status
+  INTO v_election_status
+  FROM config
+  WHERE id = 1;
+
+  IF v_election_status != 'open' THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'La votación está cerrada'
+    );
+  END IF;
+
+  -- Buscar estudiante y bloquear fila
+  SELECT *
+  INTO v_student
+  FROM students
+  WHERE access_code = p_access_code
+  FOR UPDATE;
+
+  IF v_student IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Código de acceso no válido'
+    );
+  END IF;
+
+  IF v_student.has_voted THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Este código ya ha sido utilizado'
+    );
+  END IF;
+
+  -- Verificar candidato
+  IF NOT EXISTS (SELECT 1 FROM candidates WHERE id = p_candidate_id) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Candidato no válido'
+    );
+  END IF;
+
+  -- 1) Marcar como votado
+  UPDATE students
+  SET has_voted = TRUE
+  WHERE id = v_student.id;
+
+  -- 2) Insertar registro histórico
+  INSERT INTO votes (candidate_id, student_id)
+  VALUES (p_candidate_id, v_student.id);
+
+  -- 3) Incrementar contador (sin race condition)
+  UPDATE candidates
+  SET votes = votes + 1
+  WHERE id = p_candidate_id;
+
+  -- Retornar éxito
+  RETURN jsonb_build_object(
+    'success', true,
+    'student', jsonb_build_object(
+      'name', v_student.full_name,
+      'grade', v_student.grade,
+      'course', v_student.course
+    )
+  );
+
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object(
+    'success', false,
+    'error', 'Error del sistema: ' || SQLERRM
+  );
+END;
+$$;
+
+-- ============================================================
+-- VISTAS ÚTILES PARA ADMIN
+-- ============================================================
+
+-- Participación por grado
+CREATE OR REPLACE VIEW participation_by_grade AS
+SELECT
+  grade,
+  COUNT(*) AS total_students,
+  SUM(CASE WHEN has_voted THEN 1 ELSE 0 END) AS voted,
+  ROUND(
+    100.0 * SUM(CASE WHEN has_voted THEN 1 ELSE 0 END) / COUNT(*),
+    1
+  ) AS participation_percent
+FROM students
+GROUP BY grade
+ORDER BY grade;
+
+-- Resultados
+CREATE OR REPLACE VIEW election_results AS
+SELECT
+  c.id,
+  c.name,
+  c.party,
+  c.photo_url,
+  c.votes,
+  CASE
+    WHEN (SELECT SUM(votes) FROM candidates) > 0
+    THEN ROUND(100.0 * c.votes / (SELECT SUM(votes) FROM candidates), 2)
+    ELSE 0
+  END AS percentage
+FROM candidates c
+ORDER BY c.votes DESC;
+
+-- ================================
+-- POLICIES (idempotentes, seguras)
+-- ================================
+
+ALTER TABLE students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE candidates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE config ENABLE ROW LEVEL SECURITY;
+
+-- Students
+DROP POLICY IF EXISTS service_all_students ON students;
+CREATE POLICY service_all_students
+ON students
+FOR ALL
+TO service_role
+USING (true)
+WITH CHECK (true);
+
+-- Candidates
+DROP POLICY IF EXISTS service_all_candidates ON candidates;
+CREATE POLICY service_all_candidates
+ON candidates
+FOR ALL
+TO service_role
+USING (true)
+WITH CHECK (true);
+
+-- Votes
+DROP POLICY IF EXISTS service_all_votes ON votes;
+CREATE POLICY service_all_votes
+ON votes
+FOR ALL
+TO service_role
+USING (true)
+WITH CHECK (true);
+
+-- Config
+DROP POLICY IF EXISTS service_all_config ON config;
+CREATE POLICY service_all_config
+ON config
+FOR ALL
+TO service_role
+USING (true)
+WITH CHECK (true);
