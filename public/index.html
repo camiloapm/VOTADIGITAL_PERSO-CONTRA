@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Votación Escolar</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root{
+      --bg:#f0f4f8; --card:#ffffff; --text:#1e293b; --remember:#64748b;
+      --primary:#3b82f6; --primary-dark:#2563eb;
+      --ok:#10b981; --ok-dark:#059669; --warn:#f59e0b; --danger:#ef4444;
+      --border:#e2e8f0;
+      --shadow-sm:0 1px 3px rgba(0,0,0,0.08);
+      --shadow-md:0 4px 12px rgba(0,0,0,0.1);
+      --shadow-lg:0 8px 24px rgba(0,0,0,0.12);
+    }
+    *{box-sizing:border-box; margin:0; padding:0;}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh;padding:1rem;}
+    .app-container{max-width:900px;margin:0 auto;}
+
+    /* Header moderno */
+    .header{background:var(--card);border-radius:16px;padding:1rem 1.25rem;display:flex;gap:1rem;align-items:center;justify-content:space-between;box-shadow:var(--shadow-md);margin-bottom:1rem;}
+    .brand{display:flex;gap:.75rem;align-items:center;}
+    .logo{width:56px;height:56px;border-radius:12px;object-fit:contain;border:2px solid var(--border);background:#fff;box-shadow:var(--shadow-sm);padding:4px;}
+    .title h1{font-size:1.2rem;font-weight:700;color:var(--text);margin-bottom:.15rem;}
+    .title p{color:var(--remember);font-size:.9rem;}
+    .badge{padding:.35rem .75rem;border-radius:999px;font-size:.85rem;font-weight:700;border:2px solid transparent;white-space:nowrap;transition:all .2s;}
+    .badge.open{color:#065f46;background:#ecfdf5;border-color:#86efac;}
+    .badge.closed{color:#991b1b;background:#fef2f2;border-color:#fecaca;}
+
+    /* Tarjetas modernas */
+    .card{background:var(--card);border-radius:16px;padding:1.25rem;box-shadow:var(--shadow-md);border:1px solid var(--border);margin-bottom:1rem;}
+    .card h2{font-size:1.1rem;font-weight:700;margin-bottom:.5rem;color:var(--text);}
+    .muted{color:var(--remember);font-size:.9rem;}
+    .hr{height:1px;background:linear-gradient(90deg,var(--border) 0%,transparent 100%);margin:1rem 0;}
+
+    /* Elementos de formulario */
+    .input{width:100%;padding:.85rem 1rem;border:2px solid var(--border);border-radius:10px;font-size:1rem;outline:none;transition:all .2s;}
+    .input:focus{border-color:#93c5fd;box-shadow:0 0 0 3px rgba(59,130,246,.12);}
+    .btn{border:none;border-radius:10px;padding:.8rem 1.25rem;font-weight:700;cursor:pointer;font-size:.95rem;transition:all .2s;display:inline-flex;align-items:center;justify-content:center;gap:.4rem;}
+    .btn.primary{background:var(--primary);color:#fff;}
+    .btn.primary:hover{background:var(--primary-dark);transform:translateY(-1px);box-shadow:0 3px 10px rgba(59,130,246,.3);}
+    .btn.secondary{background:#f1f5f9;color:var(--text);}
+    .btn.secondary:hover{background:#e2e8f0;}
+    .btn.success{background:var(--ok);color:#fff;}
+    .btn.success:hover{background:var(--ok-dark);transform:translateY(-1px);box-shadow:0 3px 10px rgba(16,185,129,.3);}
+    .btn:disabled{opacity:.6;cursor:not-allowed;transform:none !important;box-shadow:none !important;}
+
+    /* Alertas */
+    .alert{border-radius:10px;padding:.75rem 1rem;border:2px solid;margin-top:.75rem;font-size:.9rem;font-weight:500;}
+    .alert.ok{background:#ecfdf5;border-color:#86efac;color:#065f46;}
+    .alert.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
+    .alert.danger{background:#fef2f2;border-color:#fecaca;color:#991b1d;}
+
+    /* Sección candidatos - inicialmente oculta */
+    #candidates-section{display:none;animation:fadeIn 0.4s ease;}
+    #candidates-section.visible{display:block;}
+
+    .candidates-title{font-size:1.1rem;font-weight:700;margin-bottom:.75rem;display:flex;align-items:center;gap:.4rem;}
+    .candidates-title span{font-size:1.3rem;}
+    .candidates{display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:1rem;}
+
+    /* Tarjeta de candidato */
+    .cand{background:#fff;border:2px solid var(--border);border-radius:14px;padding:1.25rem;display:flex;flex-direction:column;align-items:center;text-align:center;cursor:pointer;transition:all .3s ease;position:relative;overflow:hidden;}
+    .cand::before{content:'';position:absolute;top:0;left:0;right:0;height:70px;background:linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);border-radius:12px 12px 0 0;margin:-1.25rem -1.25rem 0 -1.25rem;}
+    .cand:hover{border-color:#c7d2fe;transform:translateY(-3px);box-shadow:var(--shadow-lg);}
+    .cand.selected{border-color:var(--primary);box-shadow:0 0 0 3px rgba(59,130,246,.2),var(--shadow-lg);transform:translateY(-3px);}
+    .cand.selected::before{background:linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);}
+    .cand.disabled{opacity:0.5;pointer-events:none;filter:grayscale(50%);}
+
+    /* Foto del candidato */
+    .cand-photo-container{position:relative;z-index:1;margin-bottom:.75rem;}
+    .cand img{width:100px;height:100px;border-radius:50%;object-fit:cover;border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.12);background:#f8fafc;transition:all .3s;}
+    .cand:hover img{border-color:#bfdbfe;transform:scale(1.02);}
+    .cand.selected img{border-color:var(--primary);box-shadow:0 3px 12px rgba(59,130,246,.25);}
+
+    .cand .meta{position:relative;z-index:1;width:100%;}
+    .cand .name{font-size:1.05rem;font-weight:700;color:var(--text);margin-bottom:.3rem;line-height:1.3;}
+    .cand .party{display:inline-flex;align-items:center;gap:.3rem;background:linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);padding:.3rem .75rem;border-radius:16px;font-size:.8rem;font-weight:600;color:var(--remember);}
+    .cand .party-icon{font-size:.9rem;}
+
+    .selection-indicator{position:absolute;top:8px;right:8px;width:24px;height:24px;border-radius:50%;background:#fff;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;transition:all .2s;opacity:0;}
+    .cand.selected .selection-indicator{opacity:1;background:var(--ok);border-color:var(--ok);color:#fff;}
+    .selection-indicator svg{width:14px;height:14px;}
+
+    /* Footer */
+    .footer{margin-top:1.5rem;color:var(--remember);font-size:.85rem;text-align:center;padding:.5rem;}
+    .codehint{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-weight:700;background:#f1f5f9;padding:.15rem .4rem;border-radius:5px;}
+
+    /* Sección siguiente estudiante */
+    .next-student-section{margin-top:1.25rem;padding-top:1.25rem;border-top:2px dashed var(--border);}
+    .next-student-btn{width:100%;background:linear-gradient(135deg, var(--ok) 0%, #34d399 100%);color:#fff;font-weight:700;padding:.9rem;border-radius:12px;border:none;cursor:pointer;font-size:1rem;transition:all .2s;box-shadow:0 3px 10px rgba(16,185,129,.3);}
+    .next-student-btn:hover{transform:translateY(-2px);box-shadow:0 5px 16px rgba(16,185,129,.4);}
+    .countdown-text{font-size:.85rem;color:var(--ok);text-align:center;margin-top:.5rem;font-weight:500;}
+
+    /* Animaciones */
+    @keyframes fadeIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+    .cand{animation:fadeIn 0.4s ease forwards;}
+
+    /* Student info box */
+    #student-box{padding:.9rem 1.1rem;border-radius:10px;margin-top:.75rem;}
+    #student-box strong{display:block;font-size:1rem;margin-bottom:.2rem;}
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <header class="header">
+      <div class="brand">
+        <img id="school-logo" class="logo" alt="Escudo del colegio" style="display:none">
+        <div class="title">
+          <h1 id="school-name">Votación Escolar</h1>
+          <p id="subtitle">Cargando estado...</p>
+        </div>
+      </div>
+      <div id="status-badge" class="badge">...</div>
+    </header>
+
+    <!-- Paso 1: Validación de código (siempre visible inicialmente) -->
+    <section class="card" aria-label="Acceso" id="access-section">
+      <h2>🎫 Identificación</h2>
+      <p class="muted">
+        Ingresa tu código de 5 dígitos para participar en la votación.
+      </p>
+      <div class="hr"></div>
+
+      <label class="muted" for="access-code" style="display:block;margin-bottom:.4rem;font-weight:500;">Tu código</label>
+      <input
+        id="access-code"
+        class="input"
+        inputmode="numeric"
+        autocomplete="one-time-code"
+        placeholder="Ej: 06105"
+        maxlength="5"
+      />
+      <div style="display:flex;gap:.6rem;margin-top:.75rem;flex-wrap:wrap;">
+        <button id="btn-verify" class="btn primary" type="button" style="flex:1;min-width:100px;">
+          ✓ Verificar
+        </button>
+        <button id="btn-scan-qr" class="btn" type="button" style="flex:1;min-width:100px;background:#8b5cf6;color:#fff;">
+          📱 Escanear QR
+        </button>
+        <button id="btn-clear" class="btn secondary" type="button" style="flex:1;min-width:90px;">
+          Limpiar
+        </button>
+      </div>
+      
+      <!-- Modal para escáner QR -->
+      <div id="qr-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:center;justify-content:center;">
+        <div style="background:var(--card);border-radius:16px;padding:1.5rem;max-width:500px;width:90%;position:relative;">
+          <button id="btn-close-qr" style="position:absolute;top:1rem;right:1rem;background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--remember);">×</button>
+          <h3 style="margin-bottom:1rem;font-size:1.2rem;">📱 Escanear Código QR</h3>
+          <p class="muted" style="margin-bottom:1rem;">Apunta la cámara hacia el código QR de tu estudiante</p>
+          <div id="qr-reader" style="border-radius:12px;overflow:hidden;"></div>
+          <div id="qr-status" class="muted" style="text-align:center;margin-top:.75rem;font-weight:500;"></div>
+        </div>
+      </div>
+
+      <div id="access-alert" class="alert" style="display:none"></div>
+
+      <div id="student-box" class="alert ok" style="display:none;">
+        <strong>✅ Estudiante habilitado</strong>
+        <span id="student-name" style="font-size:1rem;font-weight:600;"></span>
+        <div class="muted" style="margin-top:.2rem;">
+          Grado <span id="student-grade"></span> • Curso <span id="student-course"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Paso 2: Candidatos + voto (oculto hasta verificar código) -->
+    <section class="card" aria-label="Votación" id="candidates-section">
+      <h2 class="candidates-title"><span>🗳️</span> Candidatos</h2>
+      <p class="muted" id="vote-instructions">
+        Selecciona al candidato de tu preferencia.
+      </p>
+      <div class="hr"></div>
+
+      <div id="candidates" class="candidates" aria-live="polite">
+        <div class="muted" style="text-align:center;padding:1.5rem;">Cargando candidatos...</div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div style="display:flex;flex-direction:column;gap:.6rem;">
+        <div class="muted" id="selection-text" style="font-weight:500;">Ningún candidato seleccionado.</div>
+        <button id="btn-vote" class="btn success" type="button" disabled style="font-size:1rem;padding:.9rem 1.25rem;">
+          🗳️ Confirmar Voto
+        </button>
+      </div>
+
+      <div id="vote-alert" class="alert" style="display:none"></div>
+
+      <!-- Sección para siguiente estudiante -->
+      <div id="next-student-section" class="next-student-section" style="display:none;">
+        <button id="btn-next-student" class="next-student-btn" type="button">
+          ✓ Siguiente Estudiante
+        </button>
+        <p id="countdown-text" class="countdown-text"></p>
+      </div>
+    </section>
+
+    <div class="footer">
+      Si tienes dudas sobre tu código, consulta con tu profesor. |
+      <span class="codehint">Código: GGCLL</span> (Grado-Curso-Lista)
+    </div>
+  </div>
+
+  <script>
+    const API_URL = '/api';
+
+    // Estado en memoria
+    let electionOpen = false;
+    let electionMode = 'personero';
+    let verifiedStudent = null;
+    let verifiedCode = '';
+    let candidates = [];
+    let selectedCandidateId = null;
+    let selectedPersoneroId = null;
+    let selectedContralorId = null;
+    let autoResetEnabled = true;
+    let countdownInterval = null;
+    let html5QrCode = null;
+
+    const $ = (id) => document.getElementById(id);
+
+    function showAlert(el, type, msg) {
+      el.className = `alert ${type}`;
+      el.textContent = msg;
+      el.style.display = 'block';
+      
+      // Scroll suave hacia la alerta
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    function hideAlert(el){ el.style.display = 'none'; el.textContent=''; el.className='alert'; }
+
+    function onlyDigits(s){ return String(s || '').replace(/[^\d]/g, ''); }
+    function isValidCode(code){ return /^\d{5}$/.test(code); }
+
+    async function fetchJSON(path, options = {}) {
+      const res = await fetch(path, options);
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, status: res.status, data };
+    }
+
+    // Generador de imagen placeholder con iniciales
+    function generatePlaceholder(name, size = 100) {
+      const initials = name ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : '?';
+      const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+      const color = colors[name ? name.charCodeAt(0) % colors.length : 0];
+      
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+        <rect width="100%" height="100%" fill="${color}" rx="${size/2}"/>
+        <text x="50%" y="52%" text-anchor="middle" font-family="Arial, sans-serif" font-size="${size/2.5}" font-weight="bold" fill="#ffffff">${initials}</text>
+      </svg>`;
+      return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    }
+
+    // Generador de escudo placeholder
+    function generateSchoolLogoPlaceholder() {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+        <rect width="100%" height="100%" fill="#f1f5f9" rx="16"/>
+        <path d="M60 20 L90 40 L90 80 L60 100 L30 80 L30 40 Z" fill="#3b82f6" opacity="0.3"/>
+        <path d="M60 30 L80 45 L80 75 L60 90 L40 75 L40 45 Z" fill="#3b82f6" opacity="0.5"/>
+        <text x="60" y="65" text-anchor="middle" font-family="Arial" font-size="24" fill="#1e40af">★</text>
+      </svg>`;
+      return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    }
+
+    // Mostrar sección de candidatos
+    function showCandidatesSection() {
+      const section = $('candidates-section');
+      section.classList.add('visible');
+      section.style.display = 'block';
+      
+      // Scroll suave hacia los candidatos
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // Ocultar sección de candidatos
+    function hideCandidatesSection() {
+      const section = $('candidates-section');
+      section.classList.remove('visible');
+      setTimeout(() => {
+        if (!section.classList.contains('visible')) {
+          section.style.display = 'none';
+        }
+      }, 400);
+    }
+
+    async function loadStatus() {
+      const { ok, data } = await fetchJSON(`${API_URL}/check-status`);
+      if (!ok) {
+        $('subtitle').textContent = 'Error al cargar';
+        $('status-badge').textContent = 'Error';
+        $('status-badge').className = 'badge closed';
+        electionOpen = false;
+        return;
+      }
+
+      electionOpen = data.open === true;
+      electionMode = data.mode || data.election_mode || 'personero';
+
+      // Branding
+      if (data.school_name) $('school-name').textContent = data.school_name;
+      
+      // Manejo del logo con object-fit: contain
+      const img = $('school-logo');
+      const logoUrl = data.school_logo || data.school_logo_url || '';
+      
+      if (logoUrl && logoUrl.trim() !== '') {
+        img.onload = function() {
+          img.style.display = 'block';
+        };
+        img.onerror = function() {
+          img.src = generateSchoolLogoPlaceholder();
+          img.style.display = 'block';
+        };
+        img.src = logoUrl;
+      } else {
+        img.src = generateSchoolLogoPlaceholder();
+        img.style.display = 'block';
+      }
+
+      // Estado
+      const badge = $('status-badge');
+      if (electionOpen) {
+        badge.textContent = '🟢 ABIERTA';
+        badge.className = 'badge open';
+        // Subtítulo con modo
+        if (electionMode === 'personero') $('subtitle').textContent = 'Puedes votar por Personero Estudiantil.';
+        else if (electionMode === 'contralor') $('subtitle').textContent = 'Puedes votar por Contralor Estudiantil.';
+        else $('subtitle').textContent = 'Puedes votar por Personero y Contralor.';
+      } else {
+        badge.textContent = '🔴 CERRADA';
+        badge.className = 'badge closed';
+        $('subtitle').textContent = 'La votación está cerrada.';
+      }
+
+      // Mantener el estado del botón de votar según si hay un candidato seleccionado
+      // Solo deshabilitar el botón si NO hay un candidato seleccionado y la elección está abierta
+      if (!selectedCandidateId) {
+        $('btn-vote').disabled = true;
+      } else if (electionOpen) {
+        $('btn-vote').disabled = false;
+      }
+    }
+
+    function renderCandidates() {
+      const wrap = $('candidates');
+      wrap.innerHTML = '';
+
+      if (!candidates || candidates.length === 0) {
+        wrap.innerHTML = `<div class="muted" style="text-align:center;padding:1.5rem;">📋 No hay candidatos registrados.</div>`;
+        return;
+      }
+
+      for (const [index, c] of candidates.entries()) {
+        const div = document.createElement('div');
+        div.className = 'cand';
+        div.dataset.id = c.id;
+        div.style.animationDelay = `${index * 0.08}s`;
+
+        // Indicador de selección
+        const indicator = document.createElement('div');
+        indicator.className = 'selection-indicator';
+        indicator.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>`;
+        div.appendChild(indicator);
+
+        // Contenedor de foto
+        const photoContainer = document.createElement('div');
+        photoContainer.className = 'cand-photo-container';
+
+        const img = document.createElement('img');
+        img.alt = `Foto de ${c.name}`;
+        
+        if (c.photo_url && c.photo_url.trim() !== '') {
+          img.src = c.photo_url;
+          img.onerror = function() {
+            this.src = generatePlaceholder(c.name, 100);
+          };
+        } else {
+          img.src = generatePlaceholder(c.name, 100);
+        }
+
+        photoContainer.appendChild(img);
+        div.appendChild(photoContainer);
+
+        // Meta información
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = c.name || 'Candidato';
+
+        const party = document.createElement('div');
+        party.className = 'party';
+        if (c.party) {
+          party.innerHTML = `<span class="party-icon">📋</span> Lista ${c.party}`;
+        } else {
+          party.innerHTML = `<span class="party-icon">👤</span> Independiente`;
+        }
+
+        meta.appendChild(name);
+        meta.appendChild(party);
+        div.appendChild(meta);
+
+        div.addEventListener('click', () => {
+          if (!electionOpen) {
+            showAlert($('vote-alert'), 'warn', '⏰ La votación está cerrada.');
+            return;
+          }
+          if (!verifiedStudent) {
+            showAlert($('vote-alert'), 'warn', '🔑 Tu sesión ha expirado. Vuelve a verificar tu código.');
+            return;
+          }
+
+          // Selección según modo
+          if (electionMode === 'both') {
+            // En modo both, esta pantalla funciona como "paso 1" y "paso 2" usando el mismo listado.
+            // Para mantener la estructura sin rehacer UI, elegimos primero personero y luego contralor.
+            if (!selectedPersoneroId) {
+              selectedPersoneroId = c.id;
+            } else {
+              selectedContralorId = c.id;
+            }
+          } else {
+            selectedCandidateId = c.id;
+          }
+          document.querySelectorAll('.cand').forEach(x => x.classList.remove('selected'));
+          div.classList.add('selected');
+          if (electionMode === 'both') {
+            const step = !selectedContralorId ? 'Personero' : 'Contralor';
+            $('selection-text').innerHTML = `<span style="color:var(--ok);">✓</span> Seleccionado para <strong>${step}</strong>: <strong>${c.name}</strong>${c.party ? ` (Lista ${c.party})` : ''}`;
+          } else {
+            $('selection-text').innerHTML = `<span style="color:var(--ok);">✓</span> Seleccionado: <strong>${c.name}</strong>${c.party ? ` (Lista ${c.party})` : ''}`;
+          }
+          hideAlert($('vote-alert'));
+          // Habilitar botón si ya tenemos lo necesario
+          if (electionMode === 'both') {
+            $('btn-vote').disabled = !(selectedPersoneroId && selectedContralorId);
+            if (!selectedContralorId) {
+              showAlert($('vote-alert'), 'warn', 'Ahora selecciona tu voto para Contralor.');
+            } else {
+              hideAlert($('vote-alert'));
+            }
+          } else {
+            hideAlert($('vote-alert'));
+            $('btn-vote').disabled = false;
+          }
+          
+          // Scroll suave al botón de votar
+          $('btn-vote').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+
+        wrap.appendChild(div);
+      }
+    }
+
+    async function loadCandidates() {
+      const { ok, data } = await fetchJSON(`${API_URL}/get-candidates`);
+      if (!ok) {
+        $('candidates').innerHTML = `<div class="muted" style="text-align:center;padding:1.5rem;">❌ Error al cargar candidatos.</div>`;
+        return;
+      }
+      candidates = data.candidates || [];
+      renderCandidates();
+    }
+
+    function resetSessionUI() {
+      verifiedStudent = null;
+      verifiedCode = '';
+      selectedCandidateId = null;
+      selectedPersoneroId = null;
+      selectedContralorId = null;
+
+      $('student-box').style.display = 'none';
+      $('student-name').textContent = '';
+      $('student-grade').textContent = '';
+      $('student-course').textContent = '';
+
+      document.querySelectorAll('.cand').forEach(x => {
+        x.classList.remove('selected');
+        x.classList.remove('disabled');
+        x.style.pointerEvents = 'auto';
+        x.style.filter = 'none';
+      });
+      $('selection-text').textContent = 'Ningún candidato seleccionado.';
+      $('btn-vote').disabled = true;
+
+      hideAlert($('access-alert'));
+      hideAlert($('vote-alert'));
+
+      $('next-student-section').style.display = 'none';
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+      $('countdown-text').textContent = '';
+    }
+
+    function prepareForNextStudent() {
+      // Habilitar controles para el siguiente estudiante
+      $('access-code').disabled = false;
+      $('access-code').value = '';
+      $('access-code').focus();
+      $('btn-verify').disabled = false;
+      $('btn-verify').innerHTML = '✓ Verificar';
+      
+      // Reiniciar UI
+      resetSessionUI();
+      
+      // Ocultar sección de candidatos
+      hideCandidatesSection();
+      
+      $('vote-instructions').textContent = 'Selecciona al candidato de tu preferencia.';
+    }
+
+    async function verifyCode() {
+      hideAlert($('access-alert'));
+      hideAlert($('vote-alert'));
+
+      if (!electionOpen) {
+        showAlert($('access-alert'), 'warn', '⏰ La votación está cerrada.');
+        return;
+      }
+
+      const raw = $('access-code').value;
+      const code = onlyDigits(raw).slice(0, 5);
+      $('access-code').value = code;
+
+      if (!isValidCode(code)) {
+        showAlert($('access-alert'), 'danger', '❌ Código inválido. Debe tener 5 dígitos.');
+        return;
+      }
+
+      $('btn-verify').disabled = true;
+      $('btn-verify').innerHTML = '⏳ Verificando...';
+
+      const { ok, data, status } = await fetchJSON(`${API_URL}/verify-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_code: code })
+      });
+
+      $('btn-verify').disabled = false;
+      $('btn-verify').innerHTML = '✓ Verificar';
+
+      if (!ok) {
+        const msg = data?.error ||
+          (status === 404 ? '🔍 Código no encontrado.' :
+           status === 403 ? '⚠️ Este código ya fue utilizado.' :
+           '❌ No se pudo verificar el código.');
+        showAlert($('access-alert'), status === 403 ? 'warn' : 'danger', msg);
+        verifiedStudent = null;
+        verifiedCode = '';
+        $('student-box').style.display = 'none';
+        $('btn-vote').disabled = true;
+        return;
+      }
+
+      verifiedStudent = data.student;
+      verifiedCode = code;
+
+      $('student-name').textContent = verifiedStudent?.name || '';
+      $('student-grade').textContent = verifiedStudent?.grade ?? '';
+      $('student-course').textContent = verifiedStudent?.course ?? '';
+      $('student-box').style.display = 'block';
+
+      showAlert($('access-alert'), 'ok', '✅ Código verificado. ¡Ya puedes votar!');
+      $('vote-instructions').textContent = '👇 Selecciona un candidato.';
+      
+      // MOSTRAR SECCIÓN DE CANDIDATOS
+      showCandidatesSection();
+    }
+
+    async function castVote() {
+      hideAlert($('vote-alert'));
+
+      if (!electionOpen) {
+        showAlert($('vote-alert'), 'warn', '⏰ La votación está cerrada.');
+        return;
+      }
+      if (!verifiedStudent || !isValidCode(verifiedCode)) {
+        showAlert($('vote-alert'), 'warn', '🔑 Primero verifica tu código.');
+        return;
+      }
+      // Validación según modo
+      if (electionMode === 'both') {
+        if (!selectedPersoneroId || !selectedContralorId) {
+          showAlert($('vote-alert'), 'warn', '👈 Debes seleccionar Personero y Contralor.');
+          return;
+        }
+      } else {
+        if (!selectedCandidateId) {
+          showAlert($('vote-alert'), 'warn', '👈 Selecciona un candidato.');
+          return;
+        }
+      }
+
+      let confirmMsg = '';
+
+      if (electionMode === 'both') {
+        const p = candidates.find(c => c.id === selectedPersoneroId);
+        const c = candidates.find(c => c.id === selectedContralorId);
+
+        confirmMsg = `¿Confirmas tus votos?\n\n👤 Estudiante: ${verifiedStudent.name}\n📚 Grado: ${verifiedStudent.grade}° - Curso: ${verifiedStudent.course}\n\n🗳️ Personero: ${p?.name || 'Unknown'}\n🧾 Contralor: ${c?.name || 'Unknown'}`;
+      } else {
+        const candidate = candidates.find(c => c.id === selectedCandidateId);
+        confirmMsg = `¿Confirmas tu voto?\n\n👤 Estudiante: ${verifiedStudent.name}\n📚 Grado: ${verifiedStudent.grade}° - Curso: ${verifiedStudent.course}\n🗳️ Candidato: ${candidate?.name || 'Unknown'}\n${candidate?.party ? `📋 Lista: ${candidate.party}` : ''}`;
+      }
+      
+      if (!confirm(confirmMsg)) return;
+
+      $('btn-vote').disabled = true;
+      $('btn-vote').innerHTML = '⏳ Enviando voto...';
+
+      const payload = (electionMode === 'both')
+        ? { access_code: verifiedCode, personero_id: selectedPersoneroId, contralor_id: selectedContralorId }
+        : { access_code: verifiedCode, candidate_id: selectedCandidateId };
+
+      const { ok, data } = await fetchJSON(`${API_URL}/cast-vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      $('btn-vote').innerHTML = '🗳️ Confirmar Voto';
+
+      if (!ok) {
+        const msg = data?.error || '❌ No se pudo registrar el voto.';
+        showAlert($('vote-alert'), 'danger', msg);
+        $('btn-vote').disabled = false;
+        return;
+      }
+
+      showAlert($('vote-alert'), 'ok', '🎉 ¡Voto registrado correctamente! Gracias por participar.');
+      
+      $('btn-vote').disabled = true;
+      $('btn-verify').disabled = true;
+      $('access-code').disabled = true;
+
+      document.querySelectorAll('.cand').forEach(x => {
+        x.classList.add('disabled');
+        x.style.pointerEvents = 'none';
+      });
+
+      showNextStudentSection();
+    }
+
+    function showNextStudentSection() {
+      const section = $('next-student-section');
+      section.style.display = 'block';
+      
+      let secondsLeft = 8;
+      
+      $('countdown-text').textContent = `⏱️ Esta pantalla se reiniciará automáticamente en ${secondsLeft} segundos...`;
+      
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+      }
+      
+      countdownInterval = setInterval(() => {
+        secondsLeft--;
+        if (secondsLeft > 0) {
+          $('countdown-text').textContent = `⏱️ Esta pantalla se reiniciará automáticamente en ${secondsLeft} segundos...`;
+        } else {
+          clearInterval(countdownInterval);
+          prepareForNextStudent();
+        }
+      }, 1000);
+    }
+
+    // Eventos
+    $('btn-verify').addEventListener('click', verifyCode);
+    $('btn-vote').addEventListener('click', castVote);
+    $('btn-next-student').addEventListener('click', prepareForNextStudent);
+
+    $('btn-clear').addEventListener('click', () => {
+      $('access-code').value = '';
+      $('access-code').disabled = false;
+      $('btn-verify').disabled = false;
+      $('btn-verify').innerHTML = '✓ Verificar';
+      resetSessionUI();
+      hideCandidatesSection();
+      $('vote-instructions').textContent = 'Selecciona al candidato de tu preferencia.';
+    });
+
+    $('access-code').addEventListener('input', () => {
+      const cleaned = onlyDigits($('access-code').value).slice(0, 5);
+      if ($('access-code').value !== cleaned) $('access-code').value = cleaned;
+    });
+
+    $('access-code').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') verifyCode();
+    });
+
+    // ==================== FUNCIONES QR ====================
+    
+    function openQRScanner() {
+      const modal = $('qr-modal');
+      modal.style.display = 'flex';
+      
+      if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("qr-reader");
+      }
+      
+      $('qr-status').textContent = '📷 Iniciando cámara...';
+      
+      const config = {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1.0
+      };
+      
+      html5QrCode.start(
+        { facingMode: "environment" },
+        config,
+        onScanSuccess,
+        onScanError
+      ).then(() => {
+        $('qr-status').textContent = '🎯 Escanea el código QR';
+      }).catch(err => {
+        $('qr-status').textContent = '❌ Error al acceder a la cámara';
+        console.error('Error starting QR scanner:', err);
+      });
+    }
+    
+    function closeQRScanner() {
+      const modal = $('qr-modal');
+      modal.style.display = 'none';
+      
+      if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().catch(err => console.error('Error stopping scanner:', err));
+      }
+      
+      $('qr-status').textContent = '';
+    }
+    
+    function onScanSuccess(decodedText) {
+      // Extraer el código del QR
+      let code = '';
+      
+      // Si el QR contiene una URL con parámetro ?code=
+      if (decodedText.includes('?code=')) {
+        const url = new URL(decodedText);
+        code = url.searchParams.get('code');
+      } else {
+        // Si es solo el código
+        code = decodedText;
+      }
+      
+      code = onlyDigits(code).slice(0, 5);
+      
+      if (isValidCode(code)) {
+        $('access-code').value = code;
+        $('qr-status').textContent = `✅ Código detectado: ${code}`;
+        
+        // Cerrar escáner después de 1 segundo
+        setTimeout(() => {
+          closeQRScanner();
+          // Verificar automáticamente
+          verifyCode();
+        }, 1000);
+      }
+    }
+    
+    function onScanError(errorMessage) {
+      // No hacer nada con los errores normales de escaneo
+    }
+    
+    function checkURLForCode() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      
+      if (code) {
+        const cleanCode = onlyDigits(code).slice(0, 5);
+        if (isValidCode(cleanCode)) {
+          $('access-code').value = cleanCode;
+          // Limpiar la URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+          // Verificar automáticamente después de un momento
+          setTimeout(() => {
+            verifyCode();
+          }, 500);
+        }
+      }
+    }
+    
+    // Event listeners para QR
+    $('btn-scan-qr').addEventListener('click', openQRScanner);
+    $('btn-close-qr').addEventListener('click', closeQRScanner);
+
+    // Init
+    (async function init(){
+      // Asegurar que la sección de candidatos esté oculta inicialmente
+      $('candidates-section').style.display = 'none';
+      
+      resetSessionUI();
+      await loadStatus();
+      await loadCandidates();
+      setInterval(loadStatus, 10000);
+      
+      // Verificar si hay código en la URL (desde QR)
+      checkURLForCode();
+    })();
+  </script>
+</body>
+</html>
