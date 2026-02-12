@@ -1,0 +1,9 @@
+{
+  "name": "votadigital-multirol",
+  "version": "2.0.0",
+  "description": "Sistema de votación escolar con soporte multirol (Personero + Contralor)",
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.38.4"
+  }
+}
